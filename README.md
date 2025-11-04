@@ -1,33 +1,171 @@
 # pr-messaging-bot
 
-> A GitHub App built with [Probot](https://github.com/probot/probot) that A bot that allows us to have a clean, informative PR channel
+> Probot GitHub App that mirrors Pull Request state into exactly one Slack parent message plus one thread reply (CI checks breakdown). It keeps both continuously updated as reviews and checks evolve.
 
-## Setup
+## ✨ Features
+
+* Deterministic 1:1 mapping: one Slack parent message per PR (author, reviewers w/ status emojis, checks summary, lifecycle prefix).
+* Thread reply lists each check run with status emoji (✅ success, ❌ failure, 🟡 pending). Shows aggregate passed/failed/pending counts.
+* Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` automatically prepended when PR merges/closes.
+* Hidden HTML marker in main message (`<!-- pr-messaging-bot:owner/repo#123 -->`) enables stateless recovery after restarts via channel history scan.
+* Duplicate update suppression: skips Slack `chat.update` calls if newly formatted text is identical (reduces rate‑limit pressure & noise).
+* Debounce/coalesce: events within `DEBOUNCE_MS` window (e.g. rapid check_run completions) are batched into one update.
+* Structured logging (pino or console fallback) with contextual fields (`repo`, `prNumber`, `event`, `code`).
+* Error taxonomy: GitHub API, Slack API, parse, internal—each logged with a concise `code`.
+* Config validation: optional Slack channel accessibility probe at startup.
+* Stateless in-memory storage with history recovery (no persistent DB required). Eviction capped by `STORAGE_MAX_ENTRIES`.
+
+## ⚙️ Environment Variables
+
+Required (create a `.env` in local dev):
+
+| Variable | Purpose |
+|----------|---------|
+| `APP_ID` | GitHub App ID |
+| `PRIVATE_KEY` | GitHub App private key (PEM contents) |
+| `WEBHOOK_SECRET` | GitHub App webhook secret |
+| `SLACK_TOKEN` | Slack bot token (`chat:write`) |
+| `SLACK_CHANNEL` | Slack channel ID (e.g. `C0123456789`) |
+
+Optional:
+| Variable | Purpose |
+|----------|---------|
+| `STORAGE_MAX_ENTRIES` | Max in-memory cache entries (default 500) |
+| `DEBOUNCE_MS` | Debounce window in ms (e.g. 1000). 0 disables. |
+| `LOG_LEVEL` | pino/console log level (`info`, `debug`, etc.) |
+| `USE_PINO` | Set to `0` to force console fallback |
+| `SLACK_DEBUG` | `1` for verbose Slack client internal debug |
+
+Optional configuration file: `config/github-to-slack.yml` mapping GitHub usernames → Slack handles (without `@`). Example:
+
+```yaml
+octocat: octo.slack
+your-github-user: your.slack
+```
+
+## 🛠 GitHub App Setup
+
+Permissions (minimum principle of least privilege):
+* Pull Requests: Read
+* Checks: Read
+* Statuses: Read (legacy status API)
+* Metadata: Read
+
+Webhook Events:
+* `pull_request` (opened, reopened, synchronize, closed, review_requested, review_request_removed)
+* `pull_request_review` (submitted, dismissed)
+* `check_run` (completed) – can add created/queued for earlier pending visibility
+* `check_suite` (completed)
+* `status`
+
+## 🧪 Local Development
 
 ```sh
-# Install dependencies
 npm install
 
-# Run the bot
+# Run in dev mode (TypeScript directly)
+npm run dev
+
+# Or build & run compiled code
+npm run build
 npm start
 ```
 
-## Docker
+Use a webhook forwarder (e.g. [smee.io](https://smee.io)) to receive GitHub events locally:
 
 ```sh
-# 1. Build container
-docker build -t pr-messaging-bot .
-
-# 2. Start container
-docker run -e APP_ID=<app-id> -e PRIVATE_KEY=<pem-value> pr-messaging-bot
+npx smee -u https://smee.io/your-channel -t http://localhost:3000/api/github/webhooks
 ```
 
-## Contributing
+Place your `.env` file with required variables at project root.
 
-If you have suggestions for how pr-messaging-bot could be improved, or want to report a bug, open an issue! We'd love all and any contributions.
+## 💬 Slack Setup
 
-For more, check out the [Contributing Guide](CONTRIBUTING.md).
+Create a Slack App with the following Bot Token scopes:
 
-## License
+* `chat:write`
+* (Optional) `channels:read` if you want to validate the channel
+
+Install the app to your workspace and capture the Bot User OAuth Token (starts with `xoxb-`). Set it as `SLACK_TOKEN`. Set `SLACK_CHANNEL` to the channel ID (not name) for posting (open channel details in Slack → Copy ID).
+
+## 🗄 Storage & State Recovery
+
+The app uses an in-memory capped cache (size via `STORAGE_MAX_ENTRIES`). On a cache miss (e.g. restart), it scans recent channel history to locate an existing message by the hidden marker embedded in the message:
+
+```
+<!-- pr-messaging-bot:owner/repo#123 -->
+```
+
+If found, the message is updated; otherwise a new parent + thread pair is created. This enables stateless restarts without durable storage. For high‑volume channels consider adding a Redis/Postgres implementation of the `Storage` interface.
+
+Slack history scanning requires the app’s token to have access to the channel (public channels: `channels:read`; private channels: appropriate scopes or be invited). For very large channels, you can reduce `maxMessages` scanned by adjusting logic in `SlackClient.findMessageByKey`.
+
+## 🐳 Docker
+
+```sh
+# Build
+docker build -t pr-messaging-bot .
+
+# Run (mount data for persistence)
+docker run \
+	-e APP_ID=<app-id> \
+	-e PRIVATE_KEY="$(cat private-key.pem)" \
+	-e WEBHOOK_SECRET=<secret> \
+	-e SLACK_TOKEN=<xoxb-token> \
+	-e SLACK_CHANNEL=<channel-id> \
+	-v $(pwd)/data:/app/data \
+	-p 3000:3000 \
+	pr-messaging-bot
+```
+
+## 📝 Message Format
+
+Main message:
+
+```
+[owner/repo] – PR title (#123) https://github.com/owner/repo/pull/123
+Author: @slack_handle
+Reviewers: @alice ✅, @bob ❌, @carol 🟡
+Status: 5/7 checks passed
+```
+
+Thread reply (checks breakdown):
+
+```
+Checks breakdown (passed/failed/pending): 5/1/1
+✅ lint
+✅ build
+❌ unit-tests
+🕒 integration-tests
+...
+```
+
+Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` added to the first line when appropriate.
+
+## ✅ Testing
+
+Unit tests (Vitest) cover message formatting logic:
+
+```sh
+npm test
+```
+
+Type checking / lint (using `tsc`):
+
+```sh
+npm run lint
+```
+
+## 🚀 Deployment Notes
+
+* Provide environment variables securely (e.g. platform secrets manager).
+* Persist `data/messages.json` via volume or database alternative (future enhancement).
+* Scale horizontally: replace file storage with Redis/Postgres for shared state.
+
+## 🤝 Contributing
+
+Suggestions & fixes welcome—open an issue or PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## 📄 License
 
 [ISC](LICENSE) © 2025 Tim Marschall

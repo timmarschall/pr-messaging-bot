@@ -1,0 +1,4 @@
+# Example mapping of GitHub usernames to Slack handles (without @)
+# github_login: slack_handle
+octocat: octo.slack
+your-github-user: your.slack

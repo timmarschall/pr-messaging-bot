@@ -13,11 +13,17 @@
   ],
   "scripts": {
     "build": "tsc",
+    "dev": "probot run ./src/index.ts",
     "start": "probot run ./lib/index.js",
-    "test": "vitest"
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "probot": "^13.4.5"
+    "probot": "^13.4.5",
+    "@slack/web-api": "^7.0.0",
+    "yaml": "^2.4.2",
+    "dotenv": "^16.4.5",
+    "pino": "^8.17.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

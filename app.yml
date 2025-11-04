@@ -10,20 +10,14 @@
 # Read more about GitHub App Manifests:
 # https://developer.github.com/apps/building-github-apps/creating-github-apps-from-a-manifest/
 
-# The list of events the GitHub App subscribes to.
-# Uncomment the event names below to enable them.
 default_events:
-  # - check_run
-  # - check_suite
-  # - commit_comment
-  # - create
-  # - delete
-  # - deployment
-  # - deployment_status
-  # - fork
-  # - gollum
-  # - issue_comment
-  - issues
+  # Core PR lifecycle & review events
+  - pull_request            # opened, reopened, synchronize, closed, review_requested, review_request_removed
+  - pull_request_review     # submitted, dismissed
+  # CI / status visibility
+  - check_run               # completed (add created/queued in GitHub UI if earlier pending desired)
+  - check_suite             # completed
+  - status                  # legacy commit status API compatibility
 # - label
 # - milestone
 # - member
@@ -37,78 +31,17 @@ default_events:
 # - public
 # - pull_request
 # - pull_request_review
-# - pull_request_review_comment
-# - push
-# - release
-# - repository
-# - repository_import
-# - status
-# - team
-# - team_add
-# - watch
-
-# The set of permissions needed by the GitHub App. The format of the object uses
-# the permission name for the key (for example, issues) and the access type for
-# the value (for example, write).
-# Valid values are `read`, `write`, and `none`
 default_permissions:
-  # Repository creation, deletion, settings, teams, and collaborators.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-administration
-  # administration: read
+  # Minimum required for PR metadata, reviews & CI summaries
+  pull_requests: read      # fetch PR details & requested reviewers
+  checks: read             # read check runs for head SHA
+  statuses: read           # support legacy commit status API
+  metadata: read           # repository metadata references
 
-  # Checks on code.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-checks
-  # checks: read
-
-  # Repository contents, commits, branches, downloads, releases, and merges.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-contents
-  # contents: read
-
-  # Deployments and deployment statuses.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-deployments
-  # deployments: read
-
-  # Issues and related comments, assignees, labels, and milestones.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-issues
-  issues: write
-
-  # Search repositories, list collaborators, and access repository metadata.
-  # https://developer.github.com/v3/apps/permissions/#metadata-permissions
-  metadata: read
-
-  # Retrieve Pages statuses, configuration, and builds, as well as create new builds.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-pages
-  # pages: read
-
-  # Pull requests and related comments, assignees, labels, milestones, and merges.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-pull-requests
-  # pull_requests: read
-
-  # Manage the post-receive hooks for a repository.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-repository-hooks
-  # repository_hooks: read
-
-  # Manage repository projects, columns, and cards.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-repository-projects
-  # repository_projects: read
-
-  # Retrieve security vulnerability alerts.
-  # https://developer.github.com/v4/object/repositoryvulnerabilityalert/
-  # vulnerability_alerts: read
-
-  # Commit statuses.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-statuses
-  # statuses: read
-
-  # Organization members and teams.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-members
-  # members: read
-
-  # View and manage users blocked by the organization.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-organization-user-blocking
-  # organization_user_blocking: read
-
-  # Manage organization projects, columns, and cards.
+# App identity (update in GitHub settings after manifest usage)
+name: PR Messaging Bot
+description: Mirror GitHub Pull Request state into a single Slack message + thread with reviewers and CI check breakdown.
+# url: https://github.com/your-org/your-repo
   # https://developer.github.com/v3/apps/permissions/#permission-on-organization-projects
   # organization_projects: read
 
@@ -134,4 +67,4 @@ default_permissions:
 
 # Set to true when your GitHub App is available to the public or false when it is only accessible to the owner of the app.
 # Default: true
-# public: false
+public: false
