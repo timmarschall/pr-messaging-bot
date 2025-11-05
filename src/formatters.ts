@@ -81,3 +81,27 @@ export function buildThreadMessage(state: PullRequestState): string {
   const pending = total - passed - failed;
   return `Checks breakdown (passed/failed/pending): ${passed}/${failed}/${pending}\n${lines}`;
 }
+
+/**
+ * Build a Slack thread message for a PR comment (issue comment, review comment) that matched a keyword.
+ * This must include a hidden marker so we can recover/update it later. We DO NOT change the existing
+ * main message marker contract; instead we add a distinct marker namespace: comment:<owner>/<repo>#<prNumber>:<commentId>
+ */
+export function buildKeywordCommentMessage(args: {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  commentId: number;
+  author: string;
+  body: string;
+  url?: string; // direct URL to the comment if available
+}): string {
+  const { owner, repo, prNumber, commentId, author, body, url } = args;
+  const trimmed = body.length > 400 ? body.slice(0, 397) + "…" : body;
+  const header = `Comment by @${author}`;
+  const linkPart = url ? ` – ${url}` : "";
+  const key = `comment:${owner}/${repo}#${prNumber}:${commentId}`;
+  const marker = `<!-- pr-messaging-bot:${key} -->`;
+  return `${header}${linkPart}\n${trimmed}\n${marker}`;
+}
+

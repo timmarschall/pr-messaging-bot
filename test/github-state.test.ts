@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { fetchPullRequestState } from "../src/github";
 
 // Build a stub Octokit matching minimal interface used by fetchPullRequestState
@@ -17,6 +17,19 @@ function makeOctokitStub(prData: any, reviews: any[], checkRuns: any[]) {
 }
 
 describe("fetchPullRequestState", () => {
+  beforeEach(() => {
+    // Provide a minimal Probot-like logger so createLogger does not throw.
+    (globalThis as any).__APP_LOGGER = {
+      child() { return this; },
+      info() {},
+      warn() {},
+      error() {},
+      debug() {},
+    };
+  });
+  afterEach(() => {
+    delete (globalThis as any).__APP_LOGGER;
+  });
   const basePr = {
     merged: false,
     state: "open",

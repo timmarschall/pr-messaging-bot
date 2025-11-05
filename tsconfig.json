@@ -2,21 +2,16 @@
   "compilerOptions": {
     "incremental": true,
     "target": "es2022",
-    "module": "ES2022",
+    "module": "CommonJS",            // changed from ES2022
     "declaration": true,
     "sourceMap": true,
     "outDir": "./lib",
-
-    /* Strict Type-Checking Options */
     "strict": true,
-
-    /* Additional Checks */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-
-    "moduleResolution": "Bundler",
+    "moduleResolution": "Node",      // changed from Bundler
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },

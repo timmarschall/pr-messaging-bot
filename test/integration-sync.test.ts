@@ -81,6 +81,7 @@ describe("extended integration pipeline scenarios", () => {
     // Expect main message minimal reviewers line & hidden marker
     const mainPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (b: any) => {
+        console.log("MAIN POST BODY:", b);
         expect(b.text).toMatch(/Reviewers: \(none\)/);
         expect(b.text).toMatch(/Status: 0\/0 checks passed/);
         expect(b.text).toMatch(/pr-messaging-bot:owner\/repo#10/);
@@ -89,6 +90,7 @@ describe("extended integration pipeline scenarios", () => {
       .reply(200, { ok: true, ts: "10.1" });
     const threadPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (b: any) => {
+        console.log("THREAD POST BODY:", b);
         expect(b.thread_ts).toBe("10.1");
         expect(b.text).toBe("No checks reported.");
         return true;

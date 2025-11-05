@@ -13,8 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "probot run ./src/index.ts",
-    "start": "probot run ./lib/index.js",
+    "start": "npm run build && probot run ./lib/index.js",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
@@ -37,6 +36,5 @@
   },
   "engines": {
     "node": ">= 18"
-  },
-  "type": "module"
+  }
 }

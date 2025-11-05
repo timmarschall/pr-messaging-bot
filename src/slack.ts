@@ -292,4 +292,24 @@ export class SlackClient {
       return false;
     }
   }
+
+  /**
+   * Scan replies of a parent thread for a message containing a marker fragment.
+   * Returns the reply message ts if found, otherwise undefined.
+   * Does NOT return the parent ts unless parent itself holds the marker (keyword replies are separate).
+   */
+  async findReplyByMarker(channel: string, parentTs: string, markerFragment: string): Promise<string | undefined> {
+    try {
+      for await (const reply of iterateThreadReplies(this.client, channel, parentTs, this.debug)) {
+        const plain = getPlainTextFromMessage(reply);
+        if (plain.includes(markerFragment) && reply.ts) {
+          return reply.ts;
+        }
+      }
+    } catch (e) {
+      const { code, message } = classifyError(e);
+      createLogger({ component: "slack" }).error("thread_scan_failed", { code, error: message });
+    }
+    return undefined;
+  }
 }

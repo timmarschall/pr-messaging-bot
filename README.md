@@ -35,6 +35,7 @@ Optional:
 | `LOG_LEVEL` | pino/console log level (`info`, `debug`, etc.) |
 | `USE_PINO` | Set to `0` to force console fallback |
 | `SLACK_DEBUG` | `1` for verbose Slack client internal debug |
+| `SLACK_COMMENT_KEYWORDS` | Comma/newline separated substrings; when a PR issue comment or review comment body contains any, a dedicated thread message is created/updated (case-insensitive). |
 
 Optional configuration file: `config/github-to-slack.yml` mapping GitHub usernames → Slack handles (without `@`). Example:
 
@@ -141,6 +142,18 @@ Checks breakdown (passed/failed/pending): 5/1/1
 ```
 
 Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` added to the first line when appropriate.
+
+### Keyword-triggered Comment Thread Messages
+
+If you set `SLACK_COMMENT_KEYWORDS` (e.g. `SLACK_COMMENT_KEYWORDS="security,urgent"`), any PR conversation comment (`issue_comment`) or inline review comment (`pull_request_review_comment`) whose body contains one of those substrings (case-insensitive) will generate a separate reply in the PR's Slack thread. Format (keyword itself is not shown):
+
+```
+Comment by @author – https://github.com/owner/repo/pull/123#issuecomment-456789
+<trimmed first 400 chars of comment body>
+<!-- pr-messaging-bot:comment:owner/repo#123:456789 -->
+```
+
+Edits to such comments re-render and update the corresponding Slack thread message. Deletions currently do not remove the thread message (future enhancement). On restart the bot now RECOVERS existing keyword comment reply messages by scanning thread replies for their hidden markers, updating rather than duplicating. Every match is logged with code `keyword_comment_match` including repo, PR number, comment id, and keyword.
 
 ## ✅ Testing
 

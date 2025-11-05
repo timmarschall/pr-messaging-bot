@@ -1,70 +1,23 @@
-# This is a GitHub App Manifest. These settings will be used by default when
-# initially configuring your GitHub App.
-#
-# NOTE: changing this file will not update your GitHub App settings.
-# You must visit github.com/settings/apps/your-app-name to edit them.
-#
-# Read more about configuring your GitHub App:
-# https://probot.github.io/docs/development/#configuring-a-github-app
-#
-# Read more about GitHub App Manifests:
-# https://developer.github.com/apps/building-github-apps/creating-github-apps-from-a-manifest/
-
 default_events:
   # Core PR lifecycle & review events
-  - pull_request            # opened, reopened, synchronize, closed, review_requested, review_request_removed
-  - pull_request_review     # submitted, dismissed
+  - pull_request
+  - pull_request_review
+  # Inline review comments (created/edited/deleted)
+  - pull_request_review_comment
+  # Issue comments on PR "issues" (created/edited/deleted)
+  - issue_comment
   # CI / status visibility
-  - check_run               # completed (add created/queued in GitHub UI if earlier pending desired)
-  - check_suite             # completed
-  - status                  # legacy commit status API compatibility
-# - label
-# - milestone
-# - member
-# - membership
-# - org_block
-# - organization
-# - page_build
-# - project
-# - project_card
-# - project_column
-# - public
-# - pull_request
-# - pull_request_review
-default_permissions:
-  # Minimum required for PR metadata, reviews & CI summaries
-  pull_requests: read      # fetch PR details & requested reviewers
-  checks: read             # read check runs for head SHA
-  statuses: read           # support legacy commit status API
-  metadata: read           # repository metadata references
+  - check_run
+  - check_suite
+  - status
 
-# App identity (update in GitHub settings after manifest usage)
+default_permissions:
+  pull_requests: read      # PR details & requested reviewers
+  checks: read             # check runs
+  statuses: read           # legacy status API
+  issues: read             # receive issue_comment events on PRs
+  metadata: read           # repo metadata
+
 name: PR Messaging Bot
 description: Mirror GitHub Pull Request state into a single Slack message + thread with reviewers and CI check breakdown.
-# url: https://github.com/your-org/your-repo
-  # https://developer.github.com/v3/apps/permissions/#permission-on-organization-projects
-  # organization_projects: read
-
-  # Manage team discussions and related comments.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-team-discussions
-  # team_discussions: read
-
-  # Manage the post-receive hooks for an organization.
-  # https://developer.github.com/v3/apps/permissions/#permission-on-organization-hooks
-  # organization_hooks: read
-
-  # Get notified of, and update, content references.
-  # https://developer.github.com/v3/apps/permissions/
-  # organization_administration: read
-# The name of the GitHub App. Defaults to the name specified in package.json
-# name: My Probot App
-
-# The homepage of your GitHub App.
-# url: https://example.com/
-
-# A description of the GitHub App.
-# description: A description of my awesome app
-
-# Set to true when your GitHub App is available to the public or false when it is only accessible to the owner of the app.
-# Default: true
 public: false
