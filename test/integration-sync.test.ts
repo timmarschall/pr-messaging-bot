@@ -305,6 +305,10 @@ describe("extended integration pipeline scenarios", () => {
     nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, { ok: true, messages: [ { ts: existingTs, text: `Random text https://github.com/owner/repo/pull/14?frombot=pr-message-bot` } ], has_more: false });
+    // Recovery now probes thread replies before deciding to post a new thread message
+    nock("https://slack.com")
+      .post("/api/conversations.replies")
+      .reply(200, { ok: true, messages: [ { ts: existingTs, text: "Parent only" } ] });
     // Recovery path posts a new thread message
     const threadPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (b: any) => {
@@ -325,6 +329,51 @@ describe("extended integration pipeline scenarios", () => {
     await probot.receive({ name: "pull_request", id: "evt-open-14", payload: { action: "opened", number: 14, pull_request: prFixture(14, { requested_reviewers: [{ login: "rev" }] }), repository: { name: "repo", owner: { login: "owner" } } } as any });
     expect(threadPost.isDone()).toBe(true);
     expect(mainUpdate.isDone()).toBe(true);
+  });
+
+  test("recovery flow reuses existing 'No checks reported.' thread message without posting duplicate", async () => {
+    // Auth
+    nock("https://api.github.com")
+      .post("/app/installations/2/access_tokens")
+      .reply(200, { token: "test" });
+    // PR fetch (no checks)
+    nock("https://api.github.com")
+      .get("/repos/owner/repo/pulls/17")
+      .reply(200, prFixture(17));
+    nock("https://api.github.com")
+      .get("/repos/owner/repo/pulls/17/reviews")
+      .query(true)
+      .reply(200, []);
+    nock("https://api.github.com")
+      .get("/repos/owner/repo/commits/abcdef1234567890/check-runs")
+      .query(true)
+      .reply(200, { check_runs: [] });
+    // History scan returns existing main message containing tracking URL
+    const existingTs = "888.1";
+    nock("https://slack.com")
+      .post("/api/conversations.history")
+      .reply(200, { ok: true, messages: [ { ts: existingTs, text: `Recovered https://github.com/owner/repo/pull/17?frombot=pr-message-bot` } ], has_more: false });
+    // Thread replies include existing "No checks reported." message
+    nock("https://slack.com")
+      .post("/api/conversations.replies")
+      .reply(200, { ok: true, messages: [ { ts: existingTs, text: "Recovered main" }, { ts: "888.2", text: "No checks reported." } ] });
+    // Expect main update AND thread update of existing 'No checks reported.' (we always refresh now)
+    const mainUpdate = nock("https://slack.com")
+      .post("/api/chat.update", (b: any) => b.ts === existingTs && /Status: 0\/0 checks passed/.test(b.text))
+      .reply(200, { ok: true, ts: existingTs });
+    const threadUpdate = nock("https://slack.com")
+      .post("/api/chat.update", (b: any) => b.ts === "888.2" && b.text === "No checks reported.")
+      .reply(200, { ok: true, ts: "888.2" });
+    // Ensure no duplicate thread post occurs
+    const unexpectedThreadPost = nock("https://slack.com")
+      .post("/api/chat.postMessage", (b: any) => b.thread_ts === existingTs && b.text === "No checks reported.")
+      .reply(500, { ok: false });
+
+    await probot.receive({ name: "pull_request", id: "evt-open-17", payload: { action: "opened", number: 17, pull_request: prFixture(17), repository: { name: "repo", owner: { login: "owner" } } } as any });
+    expect(mainUpdate.isDone()).toBe(true);
+    expect(threadUpdate.isDone()).toBe(true);
+    // Ensure the duplicate thread post did NOT occur
+    expect(unexpectedThreadPost.isDone()).toBe(false);
   });
 
   test("neutral & skipped check runs counted as success via check_suite.completed", async () => {

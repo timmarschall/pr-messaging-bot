@@ -29,7 +29,7 @@ Main message lines (in order):
 	* `✅ Status: x/y checks passed` (all checks successful and y>0)
 	* `❌ Status: x/y checks passed` (at least one failure)
 	* `🟡 Status: x/y checks passed` (no failures, some pending)
-	* `➖ Status: 0/0 checks passed` (no checks reported)
+	* `🤷 Status: 0/0 checks passed` (no checks reported)
 Thread message:
 * Header: `Checks breakdown (passed/failed/pending): X/Y/Z`
 * Per line: emoji + check name, order preserved from GitHub API list.

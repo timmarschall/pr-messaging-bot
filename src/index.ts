@@ -1,9 +1,10 @@
 import { Probot, ProbotOctokit } from "probot";
 import { loadUserMapping } from "./user-mapping";
 import { SlackClient } from "./slack";
-import { Storage } from "./storage";
+import { Storage, MessageRecord } from "./storage";
 import { buildMainMessage, buildThreadMessage, buildKeywordCommentMessage } from "./formatters";
 import { fetchPullRequestState } from "./github";
+import { PullRequestState } from "./formatters";
 import { createLogger, classifyError } from "./logger";
 
 const slackToken = process.env.SLACK_TOKEN;
@@ -49,12 +50,18 @@ async function processKeywordComment(params: {
     // Attempt recovery for the main PR message if not cached yet.
     const foundTs = await slack.findMessageByKey(slackChannel!, prKey);
     if (!foundTs) return; // cannot proceed without parent
-    // Recreate thread message (checks) to maintain consistency
-    // We need minimal state to build thread message; reuse existing sync path would complicate.
-    // Accept posting a generic placeholder if state not ready.
-    const placeholderThread = "No checks reported."; // safe minimal fallback
-    const threadRes = await slack.postMessage({ channel: slackChannel!, text: placeholderThread, thread_ts: foundTs });
-    parentRecord = { channel: slackChannel!, ts: foundTs, thread_ts: threadRes.ts, last_thread: placeholderThread };
+    // Recover existing checks thread if present; fall back to posting placeholder.
+    let threadTs: string | undefined;
+    const replies = await slack.findReplyByMarker(slackChannel!, foundTs, "Checks breakdown (passed/failed/pending):");
+    if (replies) {
+      threadTs = replies;
+    } else {
+      // We do not have state here (to avoid refetch duplication), use placeholder.
+      const placeholderThread = "No checks reported.";
+      const threadRes = await slack.postMessage({ channel: slackChannel!, text: placeholderThread, thread_ts: foundTs });
+      threadTs = threadRes.ts;
+    }
+    parentRecord = { channel: slackChannel!, ts: foundTs, thread_ts: threadTs, last_thread: undefined };
     storage.set(prKey, parentRecord);
   }
   const commentKey = `comment:${owner}/${repo}#${prNumber}:${commentId}`;
@@ -94,6 +101,15 @@ const userMap = loadUserMapping();
 
 // Exported promise placeholder; replaced once app initializes.
 export let configValidationPromise: Promise<void> = Promise.resolve();
+// Test-only helper to simulate application restart (clears in-memory storage).
+export function __resetTestState() {
+  try {
+    // Clear only bot transient state; Slack client and userMap remain.
+    (storage as any).clear?.();
+  } catch {
+    // noop – defensive
+  }
+}
 
 export default (app: Probot) => {
   // Provide Probot logger globally for createLogger consumers.
@@ -127,6 +143,70 @@ export default (app: Probot) => {
     app.log.info({ event: context.name, action: (context.payload as any).action as string | undefined }, "event_dispatch");
   });
 
+  // --- Helper modules for sync pipeline --- //
+  const forceUpdateEvents = new Set([
+    "issue_comment.created",
+    "issue_comment.edited",
+    "issue_comment.deleted",
+    "pull_request_review_comment.created",
+    "pull_request_review_comment.edited",
+    "pull_request_review_comment.deleted",
+    "pull_request_review.submitted",
+  ]);
+
+  function buildMessages(state: PullRequestState) {
+    return {
+      main: buildMainMessage(state, userMap),
+      thread: buildThreadMessage(state),
+    };
+  }
+
+  async function recoverRecord(key: string, state: PullRequestState): Promise<MessageRecord | undefined> {
+    const foundTs = await slack!.findMessageByKey(slackChannel!, key);
+    if (!foundTs) return undefined;
+    const { thread } = buildMessages(state);
+    const searchFragment = thread === "No checks reported." ? "No checks reported." : "Checks breakdown (passed/failed/pending):";
+    let threadTs = await slack!.findReplyByMarker(slackChannel!, foundTs, searchFragment);
+    if (!threadTs) {
+      // Create fresh thread message
+      const threadRes = await slack!.postMessage({ channel: slackChannel!, text: thread, thread_ts: foundTs });
+      threadTs = threadRes.ts;
+    } else {
+      // Always update for currency (even if identical)
+      await slack!.updateMessage({ channel: slackChannel!, ts: threadTs, text: thread });
+    }
+    // Update main to latest state
+    const { main } = buildMessages(state);
+    await slack!.updateMessage({ channel: slackChannel!, ts: foundTs, text: main });
+    const record: MessageRecord = { channel: slackChannel!, ts: foundTs, thread_ts: threadTs, last_main: main, last_thread: thread };
+    storage.set(key, record);
+    return record;
+  }
+
+  async function createRecord(state: PullRequestState): Promise<MessageRecord> {
+    const { main, thread } = buildMessages(state);
+    const mainRes = await slack!.postMessage({ channel: slackChannel!, text: main });
+    const threadRes = await slack!.postMessage({ channel: slackChannel!, text: thread, thread_ts: mainRes.ts });
+    const record: MessageRecord = { channel: slackChannel!, ts: mainRes.ts, thread_ts: threadRes.ts, last_main: main, last_thread: thread };
+    return record;
+  }
+
+  async function updateRecord(record: MessageRecord, state: PullRequestState, event?: string) {
+    const { main, thread } = buildMessages(state);
+    const sameMain = record.last_main === main;
+    const sameThread = record.last_thread === thread;
+    const force = event && forceUpdateEvents.has(event);
+    if (!force && sameMain && sameThread) return;
+    if (force || !sameMain) {
+      await slack!.updateMessage({ channel: record.channel, ts: record.ts, text: main });
+      record.last_main = main;
+    }
+    if (force || !sameThread) {
+      await slack!.updateMessage({ channel: record.channel, ts: record.thread_ts, text: thread });
+      record.last_thread = thread;
+    }
+  }
+
   const executeSync = async (
     octokit: ProbotOctokit,
     owner: string,
@@ -141,110 +221,14 @@ export default (app: Probot) => {
         logger.debug("Skip sync: slack disabled");
         return;
       }
-      const state = await fetchPullRequestState(
-        octokit,
-        owner,
-        repo,
-        prNumber,
-        headSha
-      );
+      const state = await fetchPullRequestState(octokit, owner, repo, prNumber, headSha);
       const key = `${owner}/${repo}#${prNumber}`;
       let record = storage.get(key);
-
-      // Create message if missing
       if (!record) {
-        // Attempt recovery by scanning channel history
-        const foundTs = await slack.findMessageByKey(slackChannel!, key);
-        if (foundTs) {
-          // Found existing message; ensure thread reply exists or create
-          const threadText = buildThreadMessage(state);
-          // We need to fetch thread replies? Simplify: create/update a thread message anew.
-          const threadRes = await slack.postMessage({
-            channel: slackChannel!,
-            text: threadText,
-            thread_ts: foundTs,
-          });
-          record = {
-            channel: slackChannel!,
-            ts: foundTs,
-            thread_ts: threadRes.ts,
-            last_main: undefined,
-            last_thread: threadText,
-          };
-          storage.set(key, record);
-          // Update main message to latest state
-          const mainTextUpdate = buildMainMessage(state, userMap);
-          await slack.updateMessage({
-            channel: record.channel,
-            ts: record.ts,
-            text: mainTextUpdate,
-          });
-          record.last_main = mainTextUpdate;
-          record.last_thread = threadText;
-        } else {
-          // Create new message
-          const mainText = buildMainMessage(state, userMap);
-          const res = await slack.postMessage({
-            channel: slackChannel!,
-            text: mainText,
-          });
-          const threadText = buildThreadMessage(state);
-          const threadRes = await slack.postMessage({
-            channel: slackChannel!,
-            text: threadText,
-            thread_ts: res.ts,
-          });
-          const newRecord = {
-            channel: slackChannel!,
-            ts: res.ts,
-            thread_ts: threadRes.ts,
-            last_main: mainText,
-            last_thread: threadText,
-          };
-          storage.set(key, newRecord);
-        }
+        record = await recoverRecord(key, state) || (await createRecord(state));
+        storage.set(key, record);
       } else {
-        const mainText = buildMainMessage(state, userMap);
-        const threadText = buildThreadMessage(state);
-
-        const sameMain = record.last_main === mainText;
-        const sameThread = record.last_thread === threadText;
-        const forceUpdateEvents = new Set([
-          // Issue (PR) conversation comments
-          "issue_comment.created",
-          "issue_comment.edited",
-          "issue_comment.deleted",
-          // Inline review comments
-            "pull_request_review_comment.created",
-            "pull_request_review_comment.edited",
-            "pull_request_review_comment.deleted",
-          // Overall review submissions (already handled elsewhere)
-          "pull_request_review.submitted",
-        ]);
-        const force = event && forceUpdateEvents.has(event);
-
-        if (!force && sameMain && sameThread) {
-          return;
-        }
-
-        // When forcing, update both to reflect latest activity timestamp even if identical text
-        if (force || !sameMain) {
-          await slack.updateMessage({
-            channel: record.channel,
-            ts: record.ts,
-            text: mainText,
-          });
-          record.last_main = mainText;
-        }
-
-        if (force || !sameThread) {
-          await slack.updateMessage({
-            channel: record.channel,
-            ts: record.thread_ts,
-            text: threadText,
-          });
-          record.last_thread = threadText;
-        }
+        await updateRecord(record, state, event);
       }
     } catch (err) {
       const { code, message } = classifyError(err);

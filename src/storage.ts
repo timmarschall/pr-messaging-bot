@@ -36,4 +36,9 @@ export class Storage {
   size() {
     return this.cache.size;
   }
+
+  // Clear all entries (used only in test scenarios to simulate a cold restart).
+  clear() {
+    this.cache.clear();
+  }
 }

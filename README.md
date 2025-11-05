@@ -142,7 +142,7 @@ Status line emoji legend:
 * `✅` all checks passed (and at least one check exists)
 * `❌` one or more failures present
 * `🟡` no failures, some pending
-* `➖` no checks reported
+* `🤷` no checks reported
 
 ### Keyword-triggered Comment Thread Messages
 

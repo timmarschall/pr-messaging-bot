@@ -183,6 +183,8 @@ describe("keyword-based comment thread messages", () => {
     mockInitialPRFetch(prRecover);
     // Slack history returns existing main message (no thread yet)
     nock("https://slack.com").post("/api/conversations.history").reply(200, { ok: true, messages: [ { ts: "3001.1", text: "Existing main message https://github.com/owner/repo/pull/61?frombot=pr-message-bot" } ], has_more: false });
+  // Recovery path now checks existing thread replies first
+  nock("https://slack.com").post("/api/conversations.replies").reply(200, { ok: true, messages: [ { ts: "3001.1", text: "Existing main message" } ] });
     // Post placeholder checks thread during recovery
     nock("https://slack.com").post("/api/chat.postMessage").reply(200, { ok: true, ts: "3001.2" });
     // Update main to latest state
