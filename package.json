@@ -28,7 +28,7 @@
     "@types/node": "^20.0.0",
     "nock": "^14.0.5",
     "smee-client": "^2.0.0",
-    "vitest": "^2.0.0",
+    "vitest": "^4.0.7",
     "typescript": "^5.8.3"
   },
   "overrides": {
