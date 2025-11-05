@@ -240,7 +240,11 @@ export class SlackClient {
   ): Promise<string | undefined> {
     const opts = typeof maxMessagesOrOptions === "number" ? { maxMessages: maxMessagesOrOptions } : maxMessagesOrOptions;
     const { maxMessages = 400, includeThread = false } = opts;
-    const markerFragment = `pr-messaging-bot:${key}`;
+  // Hard cut: identification via unique PR URL containing query param ?frombot=pr-message-bot.
+  // key format remains owner/repo#number. We search for the PR link with query param.
+  const [owner, repoAndNum] = key.split('/');
+  const [repo, numberPart] = repoAndNum.split('#');
+  const prUrlFragment = `https://github.com/${owner}/${repo}/pull/${numberPart}?frombot=pr-message-bot`;
 
     // Cache lookup
     const cached = this.lookupKey(key);
@@ -258,7 +262,7 @@ export class SlackClient {
         this.debug
       )) {
         const plain = getPlainTextFromMessage(message);
-        if (plain.includes(markerFragment) && message.ts) {
+        if (plain.includes(prUrlFragment) && message.ts) {
           this.rememberKey(key, message.ts);
             return message.ts;
         }
@@ -266,7 +270,7 @@ export class SlackClient {
         if (includeThread && message.reply_count && message.reply_count > 0 && message.ts) {
           for await (const reply of iterateThreadReplies(this.client, channel, message.ts, this.debug)) {
             const rPlain = getPlainTextFromMessage(reply);
-            if (rPlain.includes(markerFragment)) {
+            if (rPlain.includes(prUrlFragment)) {
               this.rememberKey(key, message.ts);
               return message.ts; // Return parent ts
             }

@@ -78,13 +78,12 @@ describe("extended integration pipeline scenarios", () => {
     nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, { ok: true, messages: [], has_more: false });
-    // Expect main message minimal reviewers line & hidden marker
+  // Expect main message minimal reviewers line & PR link with tracking param
     const mainPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (b: any) => {
-        console.log("MAIN POST BODY:", b);
-        expect(b.text).toMatch(/Reviewers: \(none\)/);
-        expect(b.text).toMatch(/Status: 0\/0 checks passed/);
-        expect(b.text).toMatch(/pr-messaging-bot:owner\/repo#10/);
+        expect(b.text).toMatch(/Author: @author \| Reviewers: \(none\)/);
+        expect(b.text).toMatch(/🤷 Status: 0\/0 checks passed/);
+        expect(b.text).toMatch(/https:\/\/github\.com\/owner\/repo\/pull\/10\?frombot=pr-message-bot\|#10>/);
         return true;
       })
       .reply(200, { ok: true, ts: "10.1" });
@@ -219,7 +218,7 @@ describe("extended integration pipeline scenarios", () => {
     const mainUpdate = nock("https://slack.com")
       .post("/api/chat.update", (b: any) => {
         if (b.ts === "12.1") {
-          expect(b.text).toMatch(/Status: 1\/1 checks passed/);
+          expect(b.text).toMatch(/✅ Status: 1\/1 checks passed/);
           return true;
         }
         return false;
@@ -301,11 +300,11 @@ describe("extended integration pipeline scenarios", () => {
       .get("/repos/owner/repo/commits/abcdef1234567890/check-runs")
       .query(true)
       .reply(200, { check_runs: [ { name: "lint", conclusion: "success", status: "completed" } ] });
-    // History scan returns existing message containing marker (simulating restart lost cache)
+  // History scan returns existing message containing tracking PR URL (simulating restart lost cache)
     const existingTs = "777.1";
     nock("https://slack.com")
       .post("/api/conversations.history")
-      .reply(200, { ok: true, messages: [ { ts: existingTs, text: `Random text <!-- pr-messaging-bot:owner/repo#14 -->` } ], has_more: false });
+      .reply(200, { ok: true, messages: [ { ts: existingTs, text: `Random text https://github.com/owner/repo/pull/14?frombot=pr-message-bot` } ], has_more: false });
     // Recovery path posts a new thread message
     const threadPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (b: any) => {
@@ -319,7 +318,7 @@ describe("extended integration pipeline scenarios", () => {
       .post("/api/chat.update", (b: any) => {
         expect(b.ts).toBe(existingTs);
         expect(b.text).toMatch(/@rev ✅/);
-        expect(b.text).toMatch(/Status: 1\/1 checks passed/);
+        expect(b.text).toMatch(/✅ Status: 1\/1 checks passed/);
         return true;
       })
       .reply(200, { ok: true, ts: existingTs });
@@ -380,8 +379,8 @@ describe("extended integration pipeline scenarios", () => {
     const mainUpdate = nock("https://slack.com")
       .post("/api/chat.update", (b: any) => {
         if (b.ts === "15.1") {
-          // 2 successes out of 3
-          expect(b.text).toMatch(/Status: 2\/3 checks passed/);
+          // 2 successes out of 3 (one failure present => ❌)
+          expect(b.text).toMatch(/❌ Status: 2\/3 checks passed/);
           return true;
         }
         return false;

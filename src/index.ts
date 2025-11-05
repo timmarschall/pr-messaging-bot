@@ -65,9 +65,14 @@ async function processKeywordComment(params: {
   logger.info("keyword_comment_match", { repo: `${owner}/${repo}`, prNumber, commentId, keyword: matched, source: loggerTag });
   try {
     if (!existing) {
-      // Attempt recovery of existing reply by scanning thread replies for marker
-      const markerFragment = `pr-messaging-bot:comment:${owner}/${repo}#${prNumber}:${commentId}`;
-      const replyTs = await slack.findReplyByMarker(slackChannel!, parentRecord.ts, markerFragment);
+      // Attempt recovery of existing reply by scanning thread replies for the comment anchor fragment
+      // Anchor patterns: issue comments -> #issuecomment-<id>; review comments -> #discussion_r<id>
+      let anchorFragment = "";
+      const hashIndex = url.indexOf("#");
+      if (hashIndex !== -1) anchorFragment = url.substring(hashIndex); // includes leading '#'
+      const replyTs = anchorFragment
+        ? await slack.findReplyByMarker(slackChannel!, parentRecord.ts, anchorFragment)
+        : undefined;
       if (replyTs) {
         await slack.updateMessage({ channel: slackChannel!, ts: replyTs, text: messageText });
         storage.set(commentKey, { channel: slackChannel!, ts: parentRecord.ts, thread_ts: replyTs, last_main: messageText });

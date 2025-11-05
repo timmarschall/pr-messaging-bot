@@ -23,15 +23,17 @@ const baseState: PullRequestState = {
 };
 
 describe("formatters", () => {
-  it("builds main message with reviewers and status", () => {
+  it("builds main message with combined people line and status emoji", () => {
     const text = buildMainMessage(baseState, { alice: "alice.slack", bob: "bob.slack" });
-    expect(text).toContain("org/repo");
-    expect(text).toContain("Author: @alice.slack");
+    expect(text).toMatch(/<https:\/\/github\.com\/org\/repo\|org\/repo>/); // repo mrkdwn link
+    expect(text).toMatch(/<https:\/\/github\.com\/org\/repo\/pull\/42\?frombot=pr-message-bot\|#42>/); // PR link with tracking param
+    // Combined line
+    expect(text).toMatch(/Author: @alice.slack \| Reviewers:/);
     expect(text).toMatch(/@bob.slack ✅/);
     expect(text).toMatch(/@carol ❌/); // fallback mapping
     expect(text).toMatch(/@dave 🟡/);
-    expect(text).toContain("Status: 1/3 checks passed");
-    expect(text).toMatch(/pr-messaging-bot:org\/repo#42/); // hidden marker
+    // Status emoji should be ❌ because there is a failure present
+    expect(text).toMatch(/❌ Status: 1\/3 checks passed/);
   });
 
   it("builds thread message breakdown", () => {

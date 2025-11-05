@@ -48,9 +48,12 @@ function checkEmoji(status: CheckRunState["status"]): string {
 }
 
 export function buildMainMessage(state: PullRequestState, mapping: UserMap): string {
-  const header = `[${state.owner}/${state.repo}] – ${state.title} (#${state.number}) ${state.url}`;
-  const author = `Author: ${mapUser(mapping, state.author)}`;
-  const reviewersLine =
+  // Mrkdwn formatted header with repo + PR number links. Query param uniquely identifies bot messages for recovery.
+  const repoLink = `<https://github.com/${state.owner}/${state.repo}|${state.owner}/${state.repo}>`;
+  const prLink = `<${state.url}?frombot=pr-message-bot|#${state.number}>`;
+  const header = `${repoLink} – *${state.title}* (${prLink})`;
+  const authorHandle = `Author: ${mapUser(mapping, state.author)}`;
+  const reviewersSegment =
     state.reviewers.length === 0
       ? "Reviewers: (none)"
       : "Reviewers: " +
@@ -59,15 +62,20 @@ export function buildMainMessage(state: PullRequestState, mapping: UserMap): str
           .join(", ");
   const totalChecks = state.checks.length;
   const passed = state.checks.filter((c) => c.status === "success").length;
-  const statusLine = `Status: ${passed}/${totalChecks} checks passed`;
+  let statusEmoji: string;
+  if (totalChecks === 0) statusEmoji = "🤷"; // no checks
+  else if (passed === totalChecks) statusEmoji = "✅"; // all passed
+  else if (state.checks.some((c) => c.status === "failure")) statusEmoji = "❌"; // at least one failure
+  else statusEmoji = "🟡"; // pending
+  const statusLine = `${statusEmoji} Status: ${passed}/${totalChecks} checks passed`;
 
   let lifecyclePrefix = "";
   if (state.merged) lifecyclePrefix = "Merged ✅ | ";
   else if (state.closed && !state.merged) lifecyclePrefix = "Closed ❌ | ";
 
-  const key = `${state.owner}/${state.repo}#${state.number}`;
-  const marker = `<!-- pr-messaging-bot:${key} -->`;
-  return `${lifecyclePrefix}${header}\n${author}\n${reviewersLine}\n${statusLine}\n${marker}`;
+  // Combine author + reviewers on one line
+  const peopleLine = `${authorHandle} | ${reviewersSegment}`;
+  return `${lifecyclePrefix}${header}\n${peopleLine}\n${statusLine}`;
 }
 
 export function buildThreadMessage(state: PullRequestState): string {
@@ -96,12 +104,11 @@ export function buildKeywordCommentMessage(args: {
   body: string;
   url?: string; // direct URL to the comment if available
 }): string {
-  const { owner, repo, prNumber, commentId, author, body, url } = args;
+  const { author, body, url } = args;
   const trimmed = body.length > 400 ? body.slice(0, 397) + "…" : body;
   const header = `Comment by @${author}`;
   const linkPart = url ? ` – ${url}` : "";
-  const key = `comment:${owner}/${repo}#${prNumber}:${commentId}`;
-  const marker = `<!-- pr-messaging-bot:${key} -->`;
-  return `${header}${linkPart}\n${trimmed}\n${marker}`;
+  // Hard cut migration: comment messages no longer carry hidden markers.
+  return `${header}${linkPart}\n${trimmed}`;
 }
 

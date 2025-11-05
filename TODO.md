@@ -1,0 +1,6 @@
+- messages should 
+- Add semantic releases etc
+- Add prettier and eslint configs
+- make sure no hidden any types
+- test it locally with a test repo
+- update README with any changes

@@ -7,7 +7,7 @@
 * Deterministic 1:1 mapping: one Slack parent message per PR (author, reviewers w/ status emojis, checks summary, lifecycle prefix).
 * Thread reply lists each check run with status emoji (✅ success, ❌ failure, 🟡 pending). Shows aggregate passed/failed/pending counts.
 * Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` automatically prepended when PR merges/closes.
-* Hidden HTML marker in main message (`<!-- pr-messaging-bot:owner/repo#123 -->`) enables stateless recovery after restarts via channel history scan.
+* Tracking query param in PR mrkdwn link (`<https://github.com/owner/repo/pull/123?frombot=pr-message-bot|#123>`) enables stateless recovery (no hidden HTML marker needed).
 * Duplicate update suppression: skips Slack `chat.update` calls if newly formatted text is identical (reduces rate‑limit pressure & noise).
 * Structured logging (pino or console fallback) with contextual fields (`repo`, `prNumber`, `event`, `code`).
 * Error taxonomy: GitHub API, Slack API, parse, internal—each logged with a concise `code`.
@@ -89,11 +89,9 @@ Install the app to your workspace and capture the Bot User OAuth Token (starts w
 
 ## 🗄 Storage & State Recovery
 
-The app uses an in-memory capped cache (size via `STORAGE_MAX_ENTRIES`). On a cache miss (e.g. restart), it scans recent channel history to locate an existing message by the hidden marker embedded in the message:
+The app uses an in-memory capped cache (size via `STORAGE_MAX_ENTRIES`). On a cache miss (e.g. restart), it scans recent channel history to locate an existing message by searching for the PR URL containing the tracking query param:
 
-```
-<!-- pr-messaging-bot:owner/repo#123 -->
-```
+`https://github.com/owner/repo/pull/<number>?frombot=pr-message-bot`
 
 If found, the message is updated; otherwise a new parent + thread pair is created. This enables stateless restarts without durable storage. For high‑volume channels consider adding a Redis/Postgres implementation of the `Storage` interface.
 
@@ -122,10 +120,9 @@ docker run \
 Main message:
 
 ```
-[owner/repo] – PR title (#123) https://github.com/owner/repo/pull/123
-Author: @slack_handle
-Reviewers: @alice ✅, @bob ❌, @carol 🟡
-Status: 5/7 checks passed
+<https://github.com/owner/repo|owner/repo> – *PR title* (<https://github.com/owner/repo/pull/123?frombot=pr-message-bot|#123>)
+Author: @slack_handle | Reviewers: @alice ✅, @bob ❌, @carol 🟡
+❌ Status: 5/7 checks passed
 ```
 
 Thread reply (checks breakdown):
@@ -141,6 +138,12 @@ Checks breakdown (passed/failed/pending): 5/1/1
 
 Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` added to the first line when appropriate.
 
+Status line emoji legend:
+* `✅` all checks passed (and at least one check exists)
+* `❌` one or more failures present
+* `🟡` no failures, some pending
+* `➖` no checks reported
+
 ### Keyword-triggered Comment Thread Messages
 
 If you set `SLACK_COMMENT_KEYWORDS` (e.g. `SLACK_COMMENT_KEYWORDS="security,urgent"`), any PR conversation comment (`issue_comment`) or inline review comment (`pull_request_review_comment`) whose body contains one of those substrings (case-insensitive) will generate a separate reply in the PR's Slack thread. Format (keyword itself is not shown):
@@ -148,10 +151,9 @@ If you set `SLACK_COMMENT_KEYWORDS` (e.g. `SLACK_COMMENT_KEYWORDS="security,urge
 ```
 Comment by @author – https://github.com/owner/repo/pull/123#issuecomment-456789
 <trimmed first 400 chars of comment body>
-<!-- pr-messaging-bot:comment:owner/repo#123:456789 -->
 ```
 
-Edits to such comments re-render and update the corresponding Slack thread message. Deletions currently do not remove the thread message (future enhancement). On restart the bot now RECOVERS existing keyword comment reply messages by scanning thread replies for their hidden markers, updating rather than duplicating. Every match is logged with code `keyword_comment_match` including repo, PR number, comment id, and keyword.
+Edits to such comments re-render and update the corresponding Slack thread message. Deletions currently do not remove the thread message (future enhancement). On restart the bot recovers the main PR message via the tracking PR URL. Keyword comment replies are recreated or updated opportunistically (no hidden markers). Every match is logged with code `keyword_comment_match` including repo, PR number, comment id, and keyword.
 
 ## ✅ Testing
 

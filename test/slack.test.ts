@@ -14,7 +14,8 @@ function historyResponse(messages: any[], has_more = false, next_cursor?: string
 
 const channel = "C123";
 const key = "owner/repo#42";
-const marker = `pr-messaging-bot:${key}`;
+// New recovery identifier: unique PR URL with tracking query param.
+const prUrl = `https://github.com/owner/repo/pull/42?frombot=pr-message-bot`;
 
 describe("SlackClient.findMessageByKey", () => {
   let client: SlackClient;
@@ -27,11 +28,11 @@ describe("SlackClient.findMessageByKey", () => {
     nock.enableNetConnect();
   });
 
-  it("finds marker in first page (text message)", async () => {
+  it("finds PR URL fragment in first page (text message)", async () => {
     const scope = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, historyResponse([
-        { ts: "1", text: `Hello ${marker} here` },
+  { ts: "1", text: `Hello ${prUrl} here` },
       ]));
 
     const ts = await client.findMessageByKey(channel, key);
@@ -39,7 +40,7 @@ describe("SlackClient.findMessageByKey", () => {
     expect(scope.isDone()).toBe(true);
   });
 
-  it("paginates and finds marker on second page", async () => {
+  it("paginates and finds PR URL on second page", async () => {
     const first = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, historyResponse([
@@ -50,7 +51,7 @@ describe("SlackClient.findMessageByKey", () => {
     const second = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, historyResponse([
-        { ts: "12", text: `Something ${marker}` },
+  { ts: "12", text: `Something ${prUrl}` },
       ], false));
 
     const ts = await client.findMessageByKey(channel, key, 50);
@@ -59,14 +60,14 @@ describe("SlackClient.findMessageByKey", () => {
     expect(second.isDone()).toBe(true);
   });
 
-  it("respects maxMessages and returns undefined if marker appears later", async () => {
+  it("respects maxMessages and returns undefined if PR URL appears later", async () => {
     const scope = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, historyResponse([
         { ts: "1", text: "a" },
         { ts: "2", text: "b" },
         { ts: "3", text: "c" },
-        { ts: "4", text: `late ${marker}` }, // should not be reached when maxMessages=3
+  { ts: "4", text: `late ${prUrl}` }, // should not be reached when maxMessages=3
       ], false));
 
     const ts = await client.findMessageByKey(channel, key, 3);
@@ -74,12 +75,11 @@ describe("SlackClient.findMessageByKey", () => {
     expect(scope.isDone()).toBe(true);
   });
 
-  it("extracts marker from block-only message", async () => {
+  it("extracts PR URL from block-only message", async () => {
     const blockMsg = {
       ts: "22",
       blocks: [
-        { type: "section", text: { type: "mrkdwn", text: `Intro line` } },
-        { type: "section", text: { type: "mrkdwn", text: `<!-- ${marker} -->` } },
+  { type: "section", text: { type: "mrkdwn", text: `Intro line ${prUrl}` } },
       ],
     };
     const scope = nock("https://slack.com")
@@ -91,12 +91,12 @@ describe("SlackClient.findMessageByKey", () => {
     expect(scope.isDone()).toBe(true);
   });
 
-  it("early exits after finding marker without fetching next page", async () => {
+  it("early exits after finding PR URL without fetching next page", async () => {
     // First page contains marker and advertises more pages; absence of second mock ensures early exit.
     const first = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(200, historyResponse([
-        { ts: "31", text: `Here ${marker}` },
+  { ts: "31", text: `Here ${prUrl}` },
         { ts: "32", text: "other" },
       ], true, "cursor-next"));
 
@@ -115,21 +115,21 @@ describe("SlackClient.findMessageByKey", () => {
     expect(scope.isDone()).toBe(true);
   });
 
-  it("retries on rate limit and eventually finds marker", async () => {
+  it("retries on rate limit and eventually finds PR URL", async () => {
     // First call 429, second call success with marker
     const first = nock("https://slack.com")
       .post("/api/conversations.history")
       .reply(429, { ok: false, error: "ratelimited" }, { 'Retry-After': '0' });
     const second = nock("https://slack.com")
       .post("/api/conversations.history")
-      .reply(200, historyResponse([{ ts: "51", text: `Rate ${marker}` }]));
+  .reply(200, historyResponse([{ ts: "51", text: `Rate ${prUrl}` }]));
 
     const ts = await client.findMessageByKey(channel, key, 10);
     expect(ts).toBe("51");
     expect(first.isDone()).toBe(true);
     expect(second.isDone()).toBe(true);
   });
-  it("scans thread replies when includeThread enabled", async () => {
+  it("scans thread replies when includeThread enabled (reply contains PR URL)", async () => {
     // Parent message without marker but with reply_count, thread has reply containing marker
     const parent = { ts: "200", text: "Parent only", reply_count: 1 };
     const history = nock("https://slack.com")
@@ -139,7 +139,7 @@ describe("SlackClient.findMessageByKey", () => {
       .post("/api/conversations.replies")
       .reply(200, {
         ok: true,
-        messages: [parent, { ts: "200.1", text: `thread ${marker}` }],
+  messages: [parent, { ts: "200.1", text: `thread ${prUrl}` }],
       });
     const ts = await client.findMessageByKey(channel, key, { includeThread: true });
     expect(ts).toBe("200");
@@ -151,7 +151,7 @@ describe("SlackClient.findMessageByKey", () => {
     const scope = nock("https://slack.com")
       .post("/api/conversations.history")
       .once()
-      .reply(200, historyResponse([{ ts: "300", text: `x ${marker}` }]));
+  .reply(200, historyResponse([{ ts: "300", text: `x ${prUrl}` }]));
     // First call populates cache
     const ts1 = await client.findMessageByKey(channel, key);
     expect(ts1).toBe("300");

@@ -172,56 +172,44 @@ describe("keyword-based comment thread messages", () => {
       pull_request: prX,
       repository: { name: "repo", owner: { login: "owner" } },
     };
-    await probot.receive({ name: "pull_request_review_comment", id: "evt-review-comment-kw-52", payload: reviewCommentPayload as any } as any);
+    await probot.receive({ name: "pull_request_review_comment", id: "evt-pr-review-comment-kw-52", payload: reviewCommentPayload as any } as any);
     expect(updateMain.isDone()).toBe(true);
     expect(updateThread.isDone()).toBe(true);
     expect(postKeyword.isDone()).toBe(true);
   });
 
-  test("keyword comment recovery updates existing reply without posting new", async () => {
-    // Simulate restart: no cached storage, but Slack already has parent message + existing keyword reply.
-    const prRecover = { ...basePR, number: 60, html_url: "https://github.com/owner/repo/pull/60" };
+  test("keyword comment recovery updates existing reply via anchor fragment", async () => {
+    const prRecover = { ...basePR, number: 61, html_url: "https://github.com/owner/repo/pull/61" };
     mockInitialPRFetch(prRecover);
-    // Slack history includes existing main message with marker
-    const mainMarker = `<!--[newline] pr-messaging-bot:owner/repo#60 -->`.replace("[newline]", " pr-messaging-bot:"); // force correct marker structure
-    nock("https://slack.com")
-      .post("/api/conversations.history")
-      .reply(200, { ok: true, messages: [{ ts: "2003.1", text: `[owner/repo] – Keyword comment recovery (#60) https://github.com/owner/repo/pull/60\n${mainMarker}` }], has_more: false });
-    // Recovery path posts new checks thread (chat.postMessage) then updates main
-    nock("https://slack.com").post("/api/chat.postMessage").reply(200, { ok: true, ts: "2003.2" });
-    nock("https://slack.com").post("/api/chat.update", (b:any)=> b.ts === "2003.1").reply(200, { ok: true, ts: "2003.1" });
+    // Slack history returns existing main message (no thread yet)
+    nock("https://slack.com").post("/api/conversations.history").reply(200, { ok: true, messages: [ { ts: "3001.1", text: "Existing main message https://github.com/owner/repo/pull/61?frombot=pr-message-bot" } ], has_more: false });
+    // Post placeholder checks thread during recovery
+    nock("https://slack.com").post("/api/chat.postMessage").reply(200, { ok: true, ts: "3001.2" });
+    // Update main to latest state
+    nock("https://slack.com").post("/api/chat.update").reply(200, { ok: true, ts: "3001.1" });
+    await probot.receive({ name: "pull_request", id: "evt-pr-open-61", payload: { action: "opened", number: 61, pull_request: prRecover, repository: { name: "repo", owner: { login: "owner" } } } as any } as any);
 
-    await probot.receive({ name: "pull_request", id: "evt-pr-open-60", payload: { action: "opened", number: 60, pull_request: prRecover, repository: { name: "repo", owner: { login: "owner" } } } as any } as any);
-
-    // Second fetch for issue_comment event
+    // Simulate existing keyword reply containing the anchor #issuecomment-800
     mockInitialPRFetch(prRecover);
-    // Updates due to forced event (main + thread)
-    nock("https://slack.com").post("/api/chat.update", (b:any)=> b.ts === "2003.1").reply(200, { ok: true, ts: "2003.1" });
-    nock("https://slack.com").post("/api/chat.update", (b:any)=> b.ts === "2003.2").reply(200, { ok: true, ts: "2003.2" });
-    // Thread replies listing existing keyword reply
-    const keywordReplyMarker = "<!-- pr-messaging-bot:comment:owner/repo#60:700 -->";
-    nock("https://slack.com")
-      .post("/api/conversations.replies")
-      .reply(200, { ok: true, messages: [
-        { ts: "2003.1", text: `[owner/repo] – Keyword comment recovery (#60) https://github.com/owner/repo/pull/60\n${mainMarker}` },
-        { ts: "2003.2", text: "Checks breakdown (passed/failed/pending): 0/0/0" },
-        { ts: "2003.99", text: `Comment by @bob – https://github.com/owner/repo/pull/60#issuecomment-700\nOriginal body\n${keywordReplyMarker}` },
-      ] });
-    // Expect update on existing keyword reply (not postMessage)
-    const updateKeyword = nock("https://slack.com")
-      .post("/api/chat.update", (b:any)=> b.ts === "2003.99")
-      .reply(200, { ok: true, ts: "2003.99" });
+    nock("https://slack.com").post("/api/chat.update").reply(200, { ok: true, ts: "3001.1" }); // forced main update on comment event
+    nock("https://slack.com").post("/api/chat.update").reply(200, { ok: true, ts: "3001.2" }); // forced thread update on comment event
+    nock("https://slack.com").post("/api/conversations.replies").reply(200, { ok: true, messages: [
+      { ts: "3001.1", text: "Main" },
+      { ts: "3001.2", text: "Checks breakdown (passed/failed/pending): 0/0/0" },
+      { ts: "3001.99", text: "Comment by @bob – https://github.com/owner/repo/pull/61#issuecomment-800\nOriginal body" }
+    ] });
+    const updateExisting = nock("https://slack.com").post("/api/chat.update", (b:any)=> b.ts === "3001.99").reply(200, { ok: true, ts: "3001.99" });
 
     const issueCommentPayload = {
       action: "created",
-      issue: { number: 60, pull_request: { url: "https://api.github.com/repos/owner/repo/pulls/60" } },
-      comment: { id: 700, body: "Security follow-up after restart", user: { login: "bob" } },
+      issue: { number: 61, pull_request: { url: "https://api.github.com/repos/owner/repo/pulls/61" } },
+      comment: { id: 800, body: "Security follow-up after restart", user: { login: "bob" } },
       repository: { name: "repo", owner: { login: "owner" } },
     };
-    await probot.receive({ name: "issue_comment", id: "evt-issue-comment-recover-60", payload: issueCommentPayload as any } as any);
-    expect(updateKeyword.isDone()).toBe(true);
-    // Ensure no new postMessage for keyword occurred (only two earlier for checks + initial recovery)
-    const pendingPosts = nock.pendingMocks().filter(m => m.includes("chat.postMessage"));
-    expect(pendingPosts.length).toBe(0);
+    await probot.receive({ name: "issue_comment", id: "evt-issue-comment-recover-61", payload: issueCommentPayload as any } as any);
+    expect(updateExisting.isDone()).toBe(true);
+    // Ensure we did not post a new message
+    const postMocks = nock.pendingMocks().filter(m => m.includes("chat.postMessage"));
+    expect(postMocks.length).toBe(0);
   });
 });

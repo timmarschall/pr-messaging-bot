@@ -87,8 +87,7 @@ describe("index.ts PR Slack sync", () => {
     const mainPost = nock("https://slack.com")
       .post("/api/chat.postMessage", (body: any) => {
         expect(body.channel).toBe("C123");
-        expect(body.text).toMatch(/owner\/repo/);
-        expect(body.text).toMatch(/pr-messaging-bot:owner\/repo#1/);
+        expect(body.text).toMatch(/https:\/\/github\.com\/owner\/repo\/pull\/1\?frombot=pr-message-bot\|#1>/);
         return true;
       })
       .reply(200, { ok: true, ts: "111.1" });
