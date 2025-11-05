@@ -1,12 +1,34 @@
-**/node_modules/
-**/.git
-**/README.md
-**/LICENSE
-**/.vscode
-**/npm-debug.log
-**/coverage
-**/.env
-**/.editorconfig
-**/dist
-**/*.pem
-Dockerfile
+###############################
+# .dockerignore for pr-messaging-bot
+# Goal: minimize build context while preserving files needed for TypeScript build
+# and optional test execution. Avoid excluding artifacts we COPY in Dockerfile.
+###############################
+
+# Dependency & tooling caches
+node_modules
+npm-debug.log*
+coverage
+.vscode
+
+# VCS metadata
+.git
+.gitignore
+
+# Environment / secrets (inject at runtime instead)
+.env
+
+# Optional: test fixture keys (uncomment to exclude if not running tests in image)
+# *.pem
+
+# Build outputs from host (force fresh container build)
+dist
+lib
+
+# Editor config is tiny; keep it (remove if you prefer smaller context)
+# .editorconfig
+
+# Do NOT ignore README.md or LICENSE; they are copied into runtime image.
+# Do NOT ignore config/; required at runtime.
+
+# Dockerfile can remain; excluding is optional.
+# Dockerfile
