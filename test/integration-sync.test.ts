@@ -401,4 +401,27 @@ describe("extended integration pipeline scenarios", () => {
     expect(mainUpdate.isDone()).toBe(true);
     expect(threadUpdate.isDone()).toBe(true);
   });
+
+  test("editing PR title updates main message", async () => {
+    // Auth
+    nock("https://api.github.com").post("/app/installations/2/access_tokens").reply(200, { token: "test" });
+    // Initial open
+    nock("https://api.github.com").get("/repos/owner/repo/pulls/16").reply(200, prFixture(16, { title: "Initial Title" }));
+    nock("https://api.github.com").get("/repos/owner/repo/pulls/16/reviews").query(true).reply(200, []);
+    nock("https://api.github.com").get("/repos/owner/repo/commits/abcdef1234567890/check-runs").query(true).reply(200, { check_runs: [] });
+    nock("https://slack.com").post("/api/conversations.history").reply(200, { ok: true, messages: [], has_more: false });
+    const mainPost = nock("https://slack.com").post("/api/chat.postMessage", (b:any) => b.text.includes("Initial Title")).reply(200, { ok: true, ts: "16.1" });
+    const threadPost = nock("https://slack.com").post("/api/chat.postMessage").reply(200, { ok: true, ts: "16.2" });
+    await probot.receive({ name: "pull_request", id: "evt-open-16", payload: { action: "opened", number: 16, pull_request: prFixture(16, { title: "Initial Title" }), repository: { name: "repo", owner: { login: "owner" } } } as any });
+    expect(mainPost.isDone()).toBe(true); expect(threadPost.isDone()).toBe(true);
+
+    // Edited title event
+    nock("https://api.github.com").get("/repos/owner/repo/pulls/16").reply(200, prFixture(16, { title: "Renamed Title" }));
+    nock("https://api.github.com").get("/repos/owner/repo/pulls/16/reviews").query(true).reply(200, []);
+    nock("https://api.github.com").get("/repos/owner/repo/commits/abcdef1234567890/check-runs").query(true).reply(200, { check_runs: [] });
+    const mainUpdate = nock("https://slack.com").post("/api/chat.update", (b:any)=> b.ts === "16.1" && b.text.includes("Renamed Title")).reply(200, { ok: true, ts: "16.1" });
+    // Thread should remain same (no checks) so no update expected; absence is fine
+    await probot.receive({ name: "pull_request", id: "evt-edited-16", payload: { action: "edited", number: 16, pull_request: prFixture(16, { title: "Renamed Title" }), repository: { name: "repo", owner: { login: "owner" } } } as any });
+    expect(mainUpdate.isDone()).toBe(true);
+  });
 });

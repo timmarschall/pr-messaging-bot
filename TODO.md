@@ -1,4 +1,4 @@
-- messages should 
+- Make the config easier to update
 - Add semantic releases etc
 - Add prettier and eslint configs
 - make sure no hidden any types

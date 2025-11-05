@@ -269,6 +269,7 @@ export default (app: Probot) => {
       "pull_request.opened",
       "pull_request.reopened",
       "pull_request.synchronize",
+      "pull_request.edited",
     ],
     async (context) => {
       const prNumber = context.payload.pull_request!.number;

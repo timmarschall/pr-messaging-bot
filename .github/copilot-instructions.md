@@ -76,6 +76,7 @@ Edge: No checks → main message shows 0/x; thread returns `"No checks reported.
 - No reviewers or checks.
 - Large reviewer lists formatting.
 - Slack history scan miss (creates new message). Acceptable on race conditions.
+- Title edits (`pull_request.edited`) update header text (main message only unless other state changed).
 
 ## 12. Performance & Rate Limits
 - Minimize redundant API calls.
