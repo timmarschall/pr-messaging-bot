@@ -9,7 +9,6 @@
 * Lifecycle prefixes: `Merged ✅ |` or `Closed ❌ |` automatically prepended when PR merges/closes.
 * Hidden HTML marker in main message (`<!-- pr-messaging-bot:owner/repo#123 -->`) enables stateless recovery after restarts via channel history scan.
 * Duplicate update suppression: skips Slack `chat.update` calls if newly formatted text is identical (reduces rate‑limit pressure & noise).
-* Debounce/coalesce: events within `DEBOUNCE_MS` window (e.g. rapid check_run completions) are batched into one update.
 * Structured logging (pino or console fallback) with contextual fields (`repo`, `prNumber`, `event`, `code`).
 * Error taxonomy: GitHub API, Slack API, parse, internal—each logged with a concise `code`.
 * Config validation: optional Slack channel accessibility probe at startup.
@@ -31,7 +30,6 @@ Optional:
 | Variable | Purpose |
 |----------|---------|
 | `STORAGE_MAX_ENTRIES` | Max in-memory cache entries (default 500) |
-| `DEBOUNCE_MS` | Debounce window in ms (e.g. 1000). 0 disables. |
 | `LOG_LEVEL` | pino/console log level (`info`, `debug`, etc.) |
 | `USE_PINO` | Set to `0` to force console fallback |
 | `SLACK_DEBUG` | `1` for verbose Slack client internal debug |

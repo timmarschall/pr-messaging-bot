@@ -121,10 +121,6 @@ export default (app: Probot) => {
   app.onAny(async (context) => {
     app.log.info({ event: context.name, action: (context.payload as any).action as string | undefined }, "event_dispatch");
   });
-  // Central handler to sync a PR to Slack
-  const debounceMs = parseInt(process.env.DEBOUNCE_MS ?? "0", 10);
-  const pendingTimers = new Map<string, NodeJS.Timeout>();
-  const latestArgs = new Map<string, { octokit: ProbotOctokit; owner: string; repo: string; prNumber: number; headSha?: string; event?: string }>();
 
   const executeSync = async (
     octokit: ProbotOctokit,
@@ -259,22 +255,7 @@ export default (app: Probot) => {
     headSha?: string,
     event?: string
   ): Promise<void> => {
-    const key = `${owner}/${repo}#${prNumber}`;
-    latestArgs.set(key, { octokit, owner, repo, prNumber, headSha, event });
-    if (debounceMs <= 0) {
-      return executeSync(octokit, owner, repo, prNumber, headSha, event);
-    }
-    const existing = pendingTimers.get(key);
-    if (existing) clearTimeout(existing);
-    const logger = rootLogger.child({ repo: `${owner}/${repo}`, prNumber, event });
-    logger.debug("Debounce schedule", { code: "debounce" });
-    const t = setTimeout(() => {
-      pendingTimers.delete(key);
-      const latest = latestArgs.get(key)!;
-      executeSync(latest.octokit, latest.owner, latest.repo, latest.prNumber, latest.headSha, latest.event);
-    }, debounceMs);
-    pendingTimers.set(key, t);
-    return Promise.resolve();
+    return executeSync(octokit, owner, repo, prNumber, headSha, event);
   };
 
   // Pull request lifecycle events
